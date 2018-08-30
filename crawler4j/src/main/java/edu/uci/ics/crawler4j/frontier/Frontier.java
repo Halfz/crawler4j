@@ -3,28 +3,25 @@ package edu.uci.ics.crawler4j.frontier;
 import edu.uci.ics.crawler4j.url.WebURL;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 
 
 public interface Frontier {
-    long getNumberOfAssignedPages();
-
-    long getNumberOfProcessedPages();
-
-    long getNumberOfScheduledPages();
 
     long getQueueLength();
 
     boolean isFinished();
 
-    void setProcessed(WebURL webURL);
+    CompletionStage<Void> setProcessed(WebURL webURL);
 
     void close();
 
     void finish();
 
-    void getNextURLs(int max, List<WebURL> result);
+    CompletionStage<List<WebURL>> getNextURLs(int max);
 
-    void schedule(WebURL url);
+    CompletionStage<Void> schedule(WebURL url);
 
-    void scheduleAll(List<WebURL> urls);
+    CompletionStage<Void> scheduleAll(List<WebURL> urls);
 }

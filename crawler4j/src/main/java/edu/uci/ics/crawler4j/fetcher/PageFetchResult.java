@@ -73,20 +73,6 @@ public class PageFetchResult {
         this.fetchedUrl = fetchedUrl;
     }
 
-    public boolean fetchContent(Page page, int maxBytes) throws SocketTimeoutException {
-        try {
-            page.setFetchResponseHeaders(responseHeaders);
-            page.load(entity, maxBytes);
-            return true;
-        } catch (SocketTimeoutException e) {
-            throw e;
-        } catch (Exception e) {
-            logger.info("Exception while fetching content for: {} [{}]", page.getWebURL().getURL(),
-                        e.getMessage());
-        }
-        return false;
-    }
-
     public void discardContentIfNotConsumed() {
         try {
             if (entity != null) {

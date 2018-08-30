@@ -17,6 +17,8 @@
 
 package edu.uci.ics.crawler4j.examples.localdata;
 
+import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl;
+import edu.uci.ics.crawler4j.parser.ParserImpl;
 import org.apache.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,8 +45,8 @@ public class Downloader {
 
     public Downloader() throws InstantiationException, IllegalAccessException {
         config.setFollowRedirects(true);
-        parser = new Parser(config);
-        pageFetcher = new PageFetcher(config);
+        parser = new ParserImpl(config);
+        pageFetcher = new PageFetcherImpl(config);
     }
 
     public static void main(String[] args) throws InstantiationException, IllegalAccessException {
@@ -79,10 +81,11 @@ public class Downloader {
         curURL.setURL(url);
         PageFetchResult fetchResult = null;
         try {
-            fetchResult = pageFetcher.fetchPage(curURL);
+
+            fetchResult = pageFetcher.fetchPage(curURL).toCompletableFuture().get();
             if (fetchResult.getStatusCode() == HttpStatus.SC_OK) {
                 Page page = new Page(curURL);
-                fetchResult.fetchContent(page, config.getMaxDownloadSize());
+                page.applyPageFetchResult(fetchResult, config.getMaxDownloadSize());
                 parser.parse(page, curURL.getURL());
                 return page;
             }

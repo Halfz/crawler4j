@@ -17,7 +17,7 @@ package edu.uci.ics.crawler4j.crawler
 
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration
 import com.github.tomakehurst.wiremock.junit.WireMockRule
-import edu.uci.ics.crawler4j.fetcher.PageFetcher
+import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtConfig
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtServer
 import org.junit.Rule
@@ -122,14 +122,14 @@ class CrawlerWithJSTest extends Specification {
                 , cleanupDelaySeconds: 1
         )
 
-        PageFetcher pageFetcher = new PageFetcher(config)
+        PageFetcherImpl pageFetcher = new PageFetcherImpl(config)
         RobotstxtServer robotstxtServer = new RobotstxtServer(new RobotstxtConfig(), pageFetcher)
         CrawlController controller = new CrawlController(config, pageFetcher, robotstxtServer)
         controller.addSeed "http://localhost:" + wireMockRule.port() + "/some/index.html"
 
         controller.start(ShouldWebCrawler.class, 1)
 
-        then: "java script files must be visited"
+        then: "java script files must be seen"
         verify(exactly(1), getRequestedFor(urlEqualTo("/robots.txt")))
         verify(exactly(1), getRequestedFor(urlEqualTo("/js/app.js")))
         verify(exactly(1), getRequestedFor(urlEqualTo("/js/module1.js")))

@@ -1,24 +1,24 @@
 package edu.uci.ics.crawler4j.tests.fetcher;
 
-import java.io.IOException;
-import java.util.Date;
+import edu.uci.ics.crawler4j.crawler.CrawlConfig;
+import edu.uci.ics.crawler4j.fetcher.PageFetchResult;
+import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl;
+import edu.uci.ics.crawler4j.url.WebURL;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpHead;
-import edu.uci.ics.crawler4j.crawler.CrawlConfig;
-import edu.uci.ics.crawler4j.crawler.exceptions.PageBiggerThanMaxSizeException;
-import edu.uci.ics.crawler4j.fetcher.PageFetchResult;
-import edu.uci.ics.crawler4j.fetcher.PageFetcher;
-import edu.uci.ics.crawler4j.url.WebURL;
 
-public class PageFetcherHtmlOnly extends PageFetcher {
+import java.io.IOException;
+import java.util.Date;
+import java.util.concurrent.CompletableFuture;
+
+public class PageFetcherHtmlOnly extends PageFetcherImpl {
 
     public PageFetcherHtmlOnly(CrawlConfig config) {
         super(config);
     }
 
     @Override
-    public PageFetchResult fetchPage(WebURL webUrl)
-        throws InterruptedException, IOException, PageBiggerThanMaxSizeException {
+    public CompletableFuture<PageFetchResult> fetchPage(WebURL webUrl) {
         String toFetchURL = webUrl.getURL();
 
         PageFetchResult fetchResult = new PageFetchResult();
@@ -29,25 +29,34 @@ public class PageFetcherHtmlOnly extends PageFetcher {
             synchronized (mutex) {
                 long now = new Date().getTime();
                 if (now - this.lastFetchTime < getConfig().getPolitenessDelay()) {
-                    Thread.sleep(getConfig().getPolitenessDelay() - (now - this.lastFetchTime));
+                    try {
+                        Thread.sleep(getConfig().getPolitenessDelay() - (now - this.lastFetchTime));
+                    } catch (InterruptedException e) {
+
+                    }
                 }
                 this.lastFetchTime = new Date().getTime();
             }
 
-            HttpResponse response = httpClient.execute(head);
+            HttpResponse response = null;
+            try {
+                response = httpClient.execute(head);
+            } catch (IOException e) {
+
+            }
             fetchResult.setEntity(response.getEntity());
             fetchResult.setResponseHeaders(response.getAllHeaders());
             fetchResult.setFetchedUrl(toFetchURL);
             fetchResult.setStatusCode(response.getStatusLine().getStatusCode());
 
             String contentType = response.containsHeader("Content-Type") ?
-                                 response.getFirstHeader("Content-Type").getValue() : null;
+                    response.getFirstHeader("Content-Type").getValue() : null;
             String typeStr = (contentType != null) ? contentType.toLowerCase() : "";
 
             if (typeStr.equals("") || (typeStr.contains("text") && typeStr.contains("html"))) {
                 return super.fetchPage(webUrl);
             } else {
-                return fetchResult;
+                return CompletableFuture.completedFuture(fetchResult);
             }
         } finally {
             if (head != null) {

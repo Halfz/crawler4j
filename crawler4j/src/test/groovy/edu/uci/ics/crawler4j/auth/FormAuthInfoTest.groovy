@@ -1,30 +1,24 @@
 package edu.uci.ics.crawler4j.auth
 
-import com.github.tomakehurst.wiremock.client.BasicCredentials
+
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration
 import com.github.tomakehurst.wiremock.junit.WireMockRule
 import com.github.tomakehurst.wiremock.matching.EqualToPattern
-import com.github.tomakehurst.wiremock.matching.StringValuePattern
 import edu.uci.ics.crawler4j.crawler.CrawlConfig
 import edu.uci.ics.crawler4j.crawler.CrawlController
 import edu.uci.ics.crawler4j.crawler.WebCrawler
-import edu.uci.ics.crawler4j.crawler.authentication.BasicAuthInfo
 import edu.uci.ics.crawler4j.crawler.authentication.FormAuthInfo
-import edu.uci.ics.crawler4j.fetcher.PageFetcher
+import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtConfig
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtServer
-import org.apache.http.client.CookieStore
 import org.apache.http.client.config.CookieSpecs
 import org.apache.http.impl.client.BasicCookieStore
-import org.apache.http.impl.conn.InMemoryDnsResolver
 import org.junit.Assert
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
-import org.spockframework.util.Matchers
 import spock.lang.Specification
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*
-import static org.junit.Assert.assertThat
 
 class FormAuthInfoTest extends Specification {
 
@@ -112,7 +106,7 @@ class FormAuthInfoTest extends Specification {
         c.setCookieStore(new BasicCookieStore())
         c.setCookiePolicy(CookieSpecs.DEFAULT)
 
-        PageFetcher pageFetcher = new PageFetcher(c)
+        PageFetcherImpl pageFetcher = new PageFetcherImpl(c)
         RobotstxtConfig robotstxtConfig = new RobotstxtConfig()
         robotstxtConfig.setEnabled false
         RobotstxtServer robotstxtServer = new RobotstxtServer(robotstxtConfig, pageFetcher)

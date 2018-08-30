@@ -8,7 +8,7 @@ import edu.uci.ics.crawler4j.crawler.CrawlConfig
 import edu.uci.ics.crawler4j.crawler.CrawlController
 import edu.uci.ics.crawler4j.crawler.WebCrawler
 import edu.uci.ics.crawler4j.crawler.authentication.BasicAuthInfo
-import edu.uci.ics.crawler4j.fetcher.PageFetcher
+import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtConfig
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtServer
 import org.apache.http.impl.conn.InMemoryDnsResolver
@@ -113,7 +113,7 @@ class BasicAuthTest extends Specification {
         config.setDnsResolver(inMemDnsResolver)
         config.setAuthInfos([basicAuthInfo])
 
-        PageFetcher pageFetcher = new PageFetcher(config)
+        PageFetcherImpl pageFetcher = new PageFetcherImpl(config)
         RobotstxtConfig robotstxtConfig = new RobotstxtConfig()
         robotstxtConfig.setEnabled false
         RobotstxtServer robotstxtServer = new RobotstxtServer(robotstxtConfig, pageFetcher)

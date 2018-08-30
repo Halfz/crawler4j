@@ -5,9 +5,9 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,20 +17,12 @@
 
 package edu.uci.ics.crawler4j.crawler;
 
-import java.net.SocketTimeoutException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import org.apache.http.HttpStatus;
-import org.apache.http.impl.EnglishReasonPhraseCatalog;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import edu.uci.ics.crawler4j.crawler.exceptions.ContentFetchException;
 import edu.uci.ics.crawler4j.crawler.exceptions.PageBiggerThanMaxSizeException;
 import edu.uci.ics.crawler4j.crawler.exceptions.ParseException;
 import edu.uci.ics.crawler4j.fetcher.PageFetchResult;
 import edu.uci.ics.crawler4j.fetcher.PageFetcher;
-import edu.uci.ics.crawler4j.frontier.DocIDServer;
+import edu.uci.ics.crawler4j.frontier.DocServer;
 import edu.uci.ics.crawler4j.frontier.Frontier;
 import edu.uci.ics.crawler4j.parser.HtmlParseData;
 import edu.uci.ics.crawler4j.parser.NotAllowedContentException;
@@ -38,6 +30,18 @@ import edu.uci.ics.crawler4j.parser.ParseData;
 import edu.uci.ics.crawler4j.parser.Parser;
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtServer;
 import edu.uci.ics.crawler4j.url.WebURL;
+import org.apache.http.HttpStatus;
+import org.apache.http.impl.EnglishReasonPhraseCatalog;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * WebCrawler class in the Runnable class that is executed by each crawler thread.
@@ -59,66 +63,88 @@ public class WebCrawler implements Runnable {
      * current crawl or adding new seeds during runtime.
      */
     protected CrawlController myController;
-
     /**
      * The thread within which this crawler instance is running.
      */
     private Thread myThread;
-
     /**
      * The parser that is used by this crawler instance to parse the content of the fetched pages.
      */
     private Parser parser;
-
     /**
      * The fetcher that is used by this crawler instance to fetch the content of pages from the web.
      */
     private PageFetcher pageFetcher;
-
     /**
      * The RobotstxtServer instance that is used by this crawler instance to
      * determine whether the crawler is allowed to crawl the content of each page.
      */
     private RobotstxtServer robotstxtServer;
-
     /**
-     * The DocIDServer that is used by this crawler instance to map each URL to a unique docid.
+     * The DocServer that is used by this crawler instance to map each URL to a unique docid.
      */
-    private DocIDServer docIdServer;
-
+    private DocServer docServer;
     /**
      * The Frontier object that manages the crawl queue.
      */
     private Frontier frontier;
-
     /**
      * Is the current crawler instance waiting for new URLs? This field is
      * mainly used by the controller to detect whether all of the crawler
      * instances are waiting for new URLs and therefore there is no more work
      * and crawling can be stopped.
      */
-    private boolean isWaitingForNewURLs;
+    private AtomicBoolean isWaitingForNewURLs;
 
-    /**
-     * Initializes the current instance of the crawler
-     *
-     * @param id
-     *            the id of this crawler instance
-     * @param crawlController
-     *            the controller that manages this crawling session
-     * @throws IllegalAccessException
-     * @throws InstantiationException
-     */
-    public void init(int id, CrawlController crawlController)
-        throws InstantiationException, IllegalAccessException {
-        this.myId = id;
-        this.pageFetcher = crawlController.getPageFetcher();
-        this.robotstxtServer = crawlController.getRobotstxtServer();
-        this.docIdServer = crawlController.getDocIdServer();
-        this.frontier = crawlController.getFrontier();
-        this.parser = crawlController.getParser();
-        this.myController = crawlController;
-        this.isWaitingForNewURLs = false;
+
+    @Override
+    public void run() {
+
+        try {
+            onStart();
+            while (!myController.isShuttingDown()) {
+                isWaitingForNewURLs.set(true);
+                frontier.getNextURLs(50).thenCompose(assignedURLs -> {
+                    isWaitingForNewURLs.set(false);
+                    if (assignedURLs.isEmpty()) {
+                        if (frontier.isFinished()) {
+                            return CompletableFuture.completedFuture(null);
+                        }
+                        try {
+                            Thread.sleep(3000);
+                        } catch (InterruptedException e) {
+                            logger.error("Error occurred", e);
+                        }
+                        return CompletableFuture.completedFuture(null);
+                    } else {
+                        List<CompletionStage<Void>> ret = new ArrayList<>();
+                        for (WebURL curURL : assignedURLs) {
+                            if (myController.isShuttingDown()) {
+                                logger.info("Exiting because of controller shutdown.");
+                                return CompletableFuture.completedFuture(null);
+                            }
+                            if (curURL != null) {
+                                WebURL processUrl = handleUrlBeforeProcess(curURL);
+
+                                if (shouldProcess(processUrl)) {
+                                    ret.add(processPage(processUrl).thenAccept((Void) -> frontier.setProcessed(curURL)));
+                                } else {
+                                    ret.add(frontier.setProcessed(curURL));
+                                }
+                            }
+                        }
+                        return CompletableFuture.allOf(ret.toArray(new CompletableFuture[0]));
+                    }
+                }).toCompletableFuture().get();
+            }
+        } catch (Exception e) {
+            logger.error("thread {} dead unexpectedly", myId, e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    public CrawlController getMyController() {
+        return myController;
     }
 
     /**
@@ -130,18 +156,49 @@ public class WebCrawler implements Runnable {
         return myId;
     }
 
-    public CrawlController getMyController() {
-        return myController;
+    /**
+     * The CrawlController instance that has created this crawler instance will
+     * call this function just before terminating this crawler thread. Classes
+     * that extend WebCrawler can override this function to pass their local
+     * data to their controller. The controller then puts these local data in a
+     * List that can then be used for processing the local data of crawlers (if needed).
+     *
+     * @return currently NULL
+     */
+    public Object getMyLocalData() {
+        return null;
+    }
+
+    public Thread getThread() {
+        return myThread;
+    }
+
+    public void setThread(Thread myThread) {
+        this.myThread = myThread;
+    }
+
+
+    public boolean isNotWaitingForNewURLs() {
+        return !isWaitingForNewURLs.get();
     }
 
     /**
-     * This function is called just before starting the crawl by this crawler
-     * instance. It can be used for setting up the data structures or
-     * initializations needed by this crawler instance.
+     * Initializes the current instance of the crawler
+     *
+     * @param id              the id of this crawler instance
+     * @param crawlController the controller that manages this crawling session
+     * @throws IllegalAccessException
+     * @throws InstantiationException
      */
-    public void onStart() {
-        // Do nothing by default
-        // Sub-classed can override this to add their custom functionality
+    public void init(int id, CrawlController crawlController) throws InstantiationException, IllegalAccessException {
+        this.myId = id;
+        this.pageFetcher = crawlController.getPageFetcher();
+        this.robotstxtServer = crawlController.getRobotstxtServer();
+        this.docServer = crawlController.getDocServer();
+        this.frontier = crawlController.getFrontier();
+        this.parser = crawlController.getParser();
+        this.myController = crawlController;
+        this.isWaitingForNewURLs = new AtomicBoolean(false);
     }
 
     /**
@@ -155,12 +212,141 @@ public class WebCrawler implements Runnable {
     }
 
     /**
+     * This function is called just before starting the crawl by this crawler
+     * instance. It can be used for setting up the data structures or
+     * initializations needed by this crawler instance.
+     */
+    public void onStart() {
+        // Do nothing by default
+        // Sub-classed can override this to add their custom functionality
+    }
+
+    // 기본 3시간 sleep
+    public boolean shouldProcess(WebURL url) {
+        long lastSeen = docServer.getLastSeen(url.getURL());
+        if (lastSeen > (docServer.now() - (3 * 60 * 60)))
+            return false;
+        return true;
+    }
+
+    // 기본 1시간 sleep
+    public boolean shouldSchedule(WebURL url) {
+        long lastScheduled = docServer.getLastScheduled(url.getURL());
+        if (lastScheduled > (docServer.now() - (60 * 60)))
+            return false;
+        return true;
+    }
+
+    /**
+     * Classes that extends WebCrawler should overwrite this function to tell the
+     * crawler whether the given url should be crawled or not. The following
+     * default implementation indicates that all urls should be included in the crawl
+     * except those with a nofollow flag.
+     *
+     * @param url           the url which we are interested to know whether it should be
+     *                      included in the crawl or not.
+     * @param referringPage The Page in which this url was found.
+     * @return if the url should be included in the crawl it returns true,
+     * otherwise false is returned.
+     */
+    public boolean shouldVisit(Page referringPage, WebURL url) {
+        if (myController.getConfig().isRespectNoFollow()) {
+            return !((referringPage != null && referringPage.getContentType() != null && referringPage.getContentType().contains("html") && ((HtmlParseData) referringPage.getParseData()).getMetaTagValue("robots").contains("nofollow")) || url.getAttribute("rel").contains("nofollow"));
+        }
+
+        return true;
+    }
+
+    /**
+     * Classes that extends WebCrawler should overwrite this function to process
+     * the content of the fetched and parsed page.
+     *
+     * @param page the page object that is just fetched and parsed.
+     */
+    public void visit(Page page) {
+        // Do nothing by default
+        // Sub-classed should override this to add their custom functionality
+    }
+
+    public CompletionStage<Page> fetchPage(WebURL curURL) {
+
+        if (curURL == null) {
+            logger.warn("processPage method received null url");
+            return CompletableFuture.completedFuture(null);
+        }
+
+
+        curURL.setDocid(docServer.getOrCreateDocID(curURL.getURL()));
+
+        return pageFetcher.fetchPage(curURL).thenApply((fetchResult) -> {
+
+            Page page = new Page(curURL);
+            try {
+                int statusCode = fetchResult.getStatusCode();
+                handlePageStatusCode(curURL, statusCode, EnglishReasonPhraseCatalog.INSTANCE.getReason(statusCode,
+                        Locale.ENGLISH));
+                // Finds the status reason for all known statuses
+
+                page.setFetchResponseHeaders(fetchResult.getResponseHeaders());
+                page.setStatusCode(statusCode);
+                if (statusCode < 200 || statusCode > 299) { // Not 2XX: 2XX status codes indicate success
+                    if (isRedirect(statusCode)) { // is 3xx  todo
+                        processPageRedirectSync(page, curURL, fetchResult);
+                    } else { // All other http codes other than 3xx & 200
+                        processPageErrorSync(curURL, fetchResult);
+                    }
+
+                } else {
+                    processPage200Sync(page, curURL, fetchResult);
+                }
+            } catch (ParseException pe) {
+                onParseError(curURL);
+            } catch (ContentFetchException cfe) {
+                if (cfe.getCause() != null && cfe.getCause() instanceof SocketTimeoutException) {
+                    logger.trace("socketTimeoutException", cfe.getCause());
+                }
+                onContentFetchError(curURL);
+                onContentFetchError(page);
+            } catch (NotAllowedContentException nace) {
+                logger.debug("Skipping: {} as it contains binary content which you configured not to crawl",
+                        curURL.getURL());
+            } catch (Exception e) {
+                onUnhandledException(curURL, e);
+            } finally {
+                if (fetchResult != null) {
+                    fetchResult.discardContentIfNotConsumed();
+                }
+            }
+            return page;
+        }).exceptionally(e -> {
+            if (e.getCause() instanceof PageBiggerThanMaxSizeException) {
+                onPageBiggerThanMaxSize(curURL.getURL(),
+                        ((PageBiggerThanMaxSizeException) (e.getCause())).getPageSize());
+            } else {
+                onUnhandledException(curURL, e);
+            }
+            // TODO 여기서 에러를 던지는게 맞아보인다.
+            // TODO 에러를 던지면 상단에서 받아줘야함
+            return null;
+        });
+    }
+
+    public CompletionStage<Page> fetchPageFollowRedirect(WebURL curURL) {
+        return fetchPage(curURL).thenCompose(page -> {
+            if (isRedirect(page.getStatusCode())) {
+                return fetchPage(new WebURL(page.getRedirectedToUrl(), curURL));
+            }
+            return CompletableFuture.completedFuture(page);
+        });
+    }
+
+    /**
      * This function is called once the header of a page is fetched. It can be
      * overridden by sub-classes to perform custom logic for different status
      * codes. For example, 404 pages can be logged, etc.
      *
-     * @param webUrl WebUrl containing the statusCode
-     * @param statusCode Html Status Code number
+     * @param webUrl            WebUrl containing the statusCode
+     * @param statusCode        Html Status Code number
      * @param statusDescription Html Status COde description
      */
     protected void handlePageStatusCode(WebURL webUrl, int statusCode, String statusDescription) {
@@ -181,46 +367,9 @@ public class WebCrawler implements Runnable {
     }
 
     /**
-     * This function is called if the content of a url is bigger than allowed size.
-     *
-     * @param urlStr - The URL which it's content is bigger than allowed size
-     */
-    protected void onPageBiggerThanMaxSize(String urlStr, long pageSize) {
-        logger.warn("Skipping a URL: {} which was bigger ( {} ) than max allowed size", urlStr,
-                    pageSize);
-    }
-
-    /**
-     * This function is called if the crawler encounters a page with a 3xx status code
-     *
-     * @param page Partial page object
-     */
-    protected void onRedirectedStatusCode(Page page) {
-        //Subclasses can override this to add their custom functionality
-    }
-
-    /**
-     * This function is called if the crawler encountered an unexpected http status code ( a
-     * status code other than 3xx)
-     *
-     * @param urlStr URL in which an unexpected error was encountered while crawling
-     * @param statusCode Html StatusCode
-     * @param contentType Type of Content
-     * @param description Error Description
-     */
-    protected void onUnexpectedStatusCode(String urlStr, int statusCode, String contentType,
-                                          String description) {
-        logger.warn("Skipping URL: {}, StatusCode: {}, {}, {}", urlStr, statusCode, contentType,
-                    description);
-        // Do nothing by default (except basic logging)
-        // Sub-classed can override this to add their custom functionality
-    }
-
-    /**
      * This function is called if the content of a url could not be fetched.
      *
      * @param webUrl URL which content failed to be fetched
-     *
      * @deprecated use {@link #onContentFetchError(Page)}
      */
     @Deprecated
@@ -242,16 +391,12 @@ public class WebCrawler implements Runnable {
     }
 
     /**
-     * This function is called when a unhandled exception was encountered during fetching
+     * This function is called if the content of a url is bigger than allowed size.
      *
-     * @param webUrl URL where a unhandled exception occured
+     * @param urlStr - The URL which it's content is bigger than allowed size
      */
-    protected void onUnhandledException(WebURL webUrl, Throwable e) {
-        String urlStr = (webUrl == null ? "NULL" : webUrl.getURL());
-        logger.warn("Unhandled exception while fetching {}: {}", urlStr, e.getMessage());
-        logger.info("Stacktrace: ", e);
-        // Do nothing by default (except basic logging)
-        // Sub-classed can override this to add their custom functionality
+    protected void onPageBiggerThanMaxSize(String urlStr, long pageSize) {
+        logger.warn("Skipping a URL: {} which was bigger ( {} ) than max allowed size", urlStr, pageSize);
     }
 
     /**
@@ -266,77 +411,186 @@ public class WebCrawler implements Runnable {
     }
 
     /**
-     * The CrawlController instance that has created this crawler instance will
-     * call this function just before terminating this crawler thread. Classes
-     * that extend WebCrawler can override this function to pass their local
-     * data to their controller. The controller then puts these local data in a
-     * List that can then be used for processing the local data of crawlers (if needed).
+     * This function is called if the crawler encounters a page with a 3xx status code
      *
-     * @return currently NULL
+     * @param page Partial page object
      */
-    public Object getMyLocalData() {
-        return null;
+    protected void onRedirectedStatusCode(Page page) {
+        //Subclasses can override this to add their custom functionality
     }
 
-    @Override
-    public void run() {
-        onStart();
-        while (true) {
-            List<WebURL> assignedURLs = new ArrayList<>(50);
-            isWaitingForNewURLs = true;
-            frontier.getNextURLs(50, assignedURLs);
-            isWaitingForNewURLs = false;
-            if (assignedURLs.isEmpty()) {
-                if (frontier.isFinished()) {
-                    return;
+    /**
+     * This function is called if the crawler encountered an unexpected http status code ( a
+     * status code other than 3xx)
+     *
+     * @param urlStr      URL in which an unexpected error was encountered while crawling
+     * @param statusCode  Html StatusCode
+     * @param contentType Type of Content
+     * @param description Error Description
+     */
+    protected void onUnexpectedStatusCode(String urlStr, int statusCode, String contentType, String description) {
+        logger.warn("Skipping URL: {}, StatusCode: {}, {}, {}", urlStr, statusCode, contentType, description);
+        // Do nothing by default (except basic logging)
+        // Sub-classed can override this to add their custom functionality
+    }
+
+    /**
+     * This function is called when a unhandled exception was encountered during fetching
+     *
+     * @param webUrl URL where a unhandled exception occured
+     */
+    protected void onUnhandledException(WebURL webUrl, Throwable e) {
+        String urlStr = (webUrl == null ? "NULL" : webUrl.getURL());
+        logger.warn("Unhandled exception while fetching {}: {}", urlStr, e.getMessage());
+        logger.info("Stacktrace: ", e);
+        // Do nothing by default (except basic logging)
+        // Sub-classed can override this to add their custom functionality
+    }
+
+    protected void processDonePage200Sync(Page page, WebURL curURL) {
+        if (shouldFollowLinksIn(page.getWebURL())) {
+            ParseData parseData = page.getParseData();
+            List<WebURL> toSchedule = new ArrayList<>();
+            int maxCrawlDepth = myController.getConfig().getMaxDepthOfCrawling();
+            for (WebURL webURL : parseData.getOutgoingUrls()) {
+                webURL.setParentDocid(curURL.getDocid());
+                webURL.setParentUrl(curURL.getURL());
+                //                            int newdocid = docServer.getDocId(webURL.getURL());
+                //                            if (newdocid > 0) {
+                //                                // This is not the first time that this Url is seen.
+                // So, we set the
+                //                                // depth to a negative number.
+                //                                webURL.setDepth((short) -1);
+                //                                webURL.setDocid(newdocid);
+                //                            } else {
+
+                // TODO 이번 세션에서 본 url에 대해서 처리??? 어떻게 할지 고민하기
+                webURL.setDocid(-1);
+                webURL.setDepth((short) (curURL.getDepth() + 1));
+                if ((maxCrawlDepth == -1) || (curURL.getDepth() < maxCrawlDepth)) {
+                    if (shouldVisit(page, webURL)) {
+                        if (robotstxtServer.allows(webURL)) {
+                            if (shouldSchedule(webURL)) {
+                                toSchedule.add(webURL);
+                            }
+                        } else {
+                            logger.debug("Not visiting: {} as per the server's \"robots.txt\" " + "policy",
+                                    webURL.getURL());
+                        }
+                    } else {
+                        logger.debug("Not visiting: {} as per your \"shouldVisit\" policy", webURL.getURL());
+                    }
                 }
-                try {
-                    Thread.sleep(3000);
-                } catch (InterruptedException e) {
-                    logger.error("Error occurred", e);
+                //                            }
+            }
+            frontier.scheduleAll(toSchedule);
+            toSchedule.stream().map(WebURL::getURL).forEach(docServer::setScheduled);
+        } else {
+            logger.debug("Not looking for links in page {}, " + "as per your \"shouldFollowLinksInPage\" " + "policy"
+                    , page.getWebURL().getURL());
+        }
+    }
+
+    protected void processDonePageRedirectSync(Page page, WebURL curURL) {
+        if (myController.getConfig().isFollowRedirects()) {
+            WebURL webURL = new WebURL(page.getRedirectedToUrl(), curURL);
+            if (shouldVisit(page, webURL)) {
+                if (!shouldFollowLinksIn(webURL) || robotstxtServer.allows(webURL)) {
+                    //                                    webURL.setDocid(docServer.getOrCreateDocID
+                    // (movedToUrl));
+
+                    if (shouldSchedule(webURL)) {
+                        frontier.schedule(webURL);
+                        docServer.setScheduled(webURL.getURL());
+                    }
+                } else {
+                    logger.debug("Not visiting: {} as per the server's \"robots.txt\" policy", webURL.getURL());
                 }
             } else {
-                for (WebURL curURL : assignedURLs) {
-                    if (myController.isShuttingDown()) {
-                        logger.info("Exiting because of controller shutdown.");
-                        return;
-                    }
-                    if (curURL != null) {
-                        curURL = handleUrlBeforeProcess(curURL);
-                        processPage(curURL);
-                        frontier.setProcessed(curURL);
-                    }
-                }
+                logger.debug("Not visiting: {} as per your \"shouldVisit\" policy", webURL.getURL());
             }
         }
     }
 
-    /**
-     * Classes that extends WebCrawler should overwrite this function to tell the
-     * crawler whether the given url should be crawled or not. The following
-     * default implementation indicates that all urls should be included in the crawl
-     * except those with a nofollow flag.
-     *
-     * @param url
-     *            the url which we are interested to know whether it should be
-     *            included in the crawl or not.
-     * @param referringPage
-     *           The Page in which this url was found.
-     * @return if the url should be included in the crawl it returns true,
-     *         otherwise false is returned.
-     */
-    public boolean shouldVisit(Page referringPage, WebURL url) {
-        if (myController.getConfig().isRespectNoFollow()) {
-            return !((referringPage != null &&
-                    referringPage.getContentType() != null &&
-                    referringPage.getContentType().contains("html") &&
-                    ((HtmlParseData)referringPage.getParseData())
-                        .getMetaTagValue("robots")
-                        .contains("nofollow")) ||
-                    url.getAttribute("rel").contains("nofollow"));
+    protected CompletionStage<Page> processPage(WebURL curURL) {
+        return fetchPage(curURL).thenApply((page) -> {
+            if (page == null)
+                return null;
+            int statusCode = page.getStatusCode();
+            if (statusCode < 200 || statusCode > 299) { // Not 2XX: 2XX status codes indicate success
+                if (isRedirect(statusCode)) { // is 3xx  todo
+                    processDonePageRedirectSync(page, curURL);
+                }
+            } else {
+                processDonePage200Sync(page, curURL);
+            }
+
+            docServer.seen(page.getWebURL().getURL(), statusCode);
+            return page;
+        });
+    }
+
+    protected void processPage200Sync(Page page, WebURL curURL, PageFetchResult fetchResult) {
+
+        if (!curURL.getURL().equals(fetchResult.getFetchedUrl())) {
+            //                        if (docServer.isSeenBefore(fetchResult.getFetchedUrl())) {
+            //                            logger.debug("Redirect page: {} has already been seen", curURL);
+            //                            return;
+            //                        }
+            curURL.setURL(fetchResult.getFetchedUrl());
+            if (!shouldVisit(page, curURL)) {
+                logger.debug("Redirect page: {} has already been seen for a while", curURL);
+                return;
+            }
         }
 
-        return true;
+        try {
+            if (!page.applyPageFetchResult(fetchResult, myController.getConfig().getMaxDownloadSize())) {
+                throw new ContentFetchException();
+            }
+        } catch (SocketTimeoutException e) {
+            throw new ContentFetchException(e);
+        }
+
+        if (page.isTruncated()) {
+            logger.warn("Warning: unknown page size exceeded max-download-size, truncated to: " + "({}), " + "at " +
+                    "URL:" + " {}", myController.getConfig().getMaxDownloadSize(), curURL.getURL());
+        }
+
+        parser.parse(page, curURL.getURL());
+
+        boolean noIndex =
+                myController.getConfig().isRespectNoIndex() && page.getContentType() != null && page.getContentType().contains("html") && ((HtmlParseData) page.getParseData()).getMetaTagValue("robots").
+                contains("noindex");
+
+        if (!noIndex) {
+            visit(page);
+        }
+    }
+
+    protected void processPageErrorSync(WebURL curURL, PageFetchResult fetchResult) {
+
+        String description = EnglishReasonPhraseCatalog.INSTANCE.getReason(fetchResult.getStatusCode(),
+                Locale.ENGLISH); // Finds
+        // the status reason for all known statuses
+        String contentType = fetchResult.getEntity() == null ? "" : fetchResult.getEntity().getContentType() == null
+                ? "" : fetchResult.getEntity().getContentType().getValue();
+        onUnexpectedStatusCode(curURL.getURL(), fetchResult.getStatusCode(), contentType, description);
+    }
+
+    protected void processPageRedirectSync(Page page, WebURL curURL, PageFetchResult fetchResult) {
+
+        // follow https://issues.apache.org/jira/browse/HTTPCORE-389
+
+        page.setRedirect(true);
+
+        String movedToUrl = fetchResult.getMovedToUrl();
+        if (movedToUrl == null) {
+            logger.warn("Unexpected error, URL: {} is redirected to NOTHING", curURL);
+            return;
+        }
+        page.setRedirectedToUrl(movedToUrl);
+        onRedirectedStatusCode(page);
     }
 
     /**
@@ -344,7 +598,7 @@ public class WebCrawler implements Runnable {
      * By default this method returns true always, but classes that extend WebCrawler can
      * override it in order to implement particular policies about which pages should be
      * mined for outgoing links and which should not.
-     *
+     * <p>
      * If links from the URL are not being followed, then we are not operating as
      * a web crawler and need not check robots.txt before fetching the single URL.
      * (see definition at http://www.robotstxt.org/faq/what.html).  Thus URLs that
@@ -357,201 +611,7 @@ public class WebCrawler implements Runnable {
         return true;
     }
 
-    /**
-     * Classes that extends WebCrawler should overwrite this function to process
-     * the content of the fetched and parsed page.
-     *
-     * @param page
-     *            the page object that is just fetched and parsed.
-     */
-    public void visit(Page page) {
-        // Do nothing by default
-        // Sub-classed should override this to add their custom functionality
-    }
-
-    private void processPage(WebURL curURL) {
-        PageFetchResult fetchResult = null;
-        Page page = new Page(curURL);
-        try {
-            if (curURL == null) {
-                return;
-            }
-
-            fetchResult = pageFetcher.fetchPage(curURL);
-            int statusCode = fetchResult.getStatusCode();
-            handlePageStatusCode(curURL, statusCode,
-                                 EnglishReasonPhraseCatalog.INSTANCE.getReason(statusCode,
-                                                                               Locale.ENGLISH));
-            // Finds the status reason for all known statuses
-
-            page.setFetchResponseHeaders(fetchResult.getResponseHeaders());
-            page.setStatusCode(statusCode);
-            if (statusCode < 200 ||
-                statusCode > 299) { // Not 2XX: 2XX status codes indicate success
-                if (statusCode == HttpStatus.SC_MOVED_PERMANENTLY ||
-                    statusCode == HttpStatus.SC_MOVED_TEMPORARILY ||
-                    statusCode == HttpStatus.SC_MULTIPLE_CHOICES ||
-                    statusCode == HttpStatus.SC_SEE_OTHER ||
-                    statusCode == HttpStatus.SC_TEMPORARY_REDIRECT ||
-                    statusCode == 308) { // is 3xx  todo
-                    // follow https://issues.apache.org/jira/browse/HTTPCORE-389
-
-                    page.setRedirect(true);
-
-                    String movedToUrl = fetchResult.getMovedToUrl();
-                    if (movedToUrl == null) {
-                        logger.warn("Unexpected error, URL: {} is redirected to NOTHING",
-                                    curURL);
-                        return;
-                    }
-                    page.setRedirectedToUrl(movedToUrl);
-                    onRedirectedStatusCode(page);
-
-                    if (myController.getConfig().isFollowRedirects()) {
-                        int newDocId = docIdServer.getDocId(movedToUrl);
-                        if (newDocId > 0) {
-                            logger.debug("Redirect page: {} is already seen", curURL);
-                            return;
-                        }
-
-                        WebURL webURL = new WebURL();
-                        webURL.setURL(movedToUrl);
-                        webURL.setParentDocid(curURL.getParentDocid());
-                        webURL.setParentUrl(curURL.getParentUrl());
-                        webURL.setDepth(curURL.getDepth());
-                        webURL.setDocid(-1);
-                        webURL.setAnchor(curURL.getAnchor());
-                        if (shouldVisit(page, webURL)) {
-                            if (!shouldFollowLinksIn(webURL) || robotstxtServer.allows(webURL)) {
-                                webURL.setDocid(docIdServer.getNewDocID(movedToUrl));
-                                frontier.schedule(webURL);
-                            } else {
-                                logger.debug(
-                                    "Not visiting: {} as per the server's \"robots.txt\" policy",
-                                    webURL.getURL());
-                            }
-                        } else {
-                            logger.debug("Not visiting: {} as per your \"shouldVisit\" policy",
-                                         webURL.getURL());
-                        }
-                    }
-                } else { // All other http codes other than 3xx & 200
-                    String description =
-                        EnglishReasonPhraseCatalog.INSTANCE.getReason(fetchResult.getStatusCode(),
-                                                                      Locale.ENGLISH); // Finds
-                    // the status reason for all known statuses
-                    String contentType = fetchResult.getEntity() == null ? "" :
-                                         fetchResult.getEntity().getContentType() == null ? "" :
-                                         fetchResult.getEntity().getContentType().getValue();
-                    onUnexpectedStatusCode(curURL.getURL(), fetchResult.getStatusCode(),
-                                           contentType, description);
-                }
-
-            } else { // if status code is 200
-                if (!curURL.getURL().equals(fetchResult.getFetchedUrl())) {
-                    if (docIdServer.isSeenBefore(fetchResult.getFetchedUrl())) {
-                        logger.debug("Redirect page: {} has already been seen", curURL);
-                        return;
-                    }
-                    curURL.setURL(fetchResult.getFetchedUrl());
-                    curURL.setDocid(docIdServer.getNewDocID(fetchResult.getFetchedUrl()));
-                }
-
-                if (!fetchResult.fetchContent(page,
-                                              myController.getConfig().getMaxDownloadSize())) {
-                    throw new ContentFetchException();
-                }
-
-                if (page.isTruncated()) {
-                    logger.warn(
-                        "Warning: unknown page size exceeded max-download-size, truncated to: " +
-                        "({}), at URL: {}",
-                        myController.getConfig().getMaxDownloadSize(), curURL.getURL());
-                }
-
-                parser.parse(page, curURL.getURL());
-
-                if (shouldFollowLinksIn(page.getWebURL())) {
-                    ParseData parseData = page.getParseData();
-                    List<WebURL> toSchedule = new ArrayList<>();
-                    int maxCrawlDepth = myController.getConfig().getMaxDepthOfCrawling();
-                    for (WebURL webURL : parseData.getOutgoingUrls()) {
-                        webURL.setParentDocid(curURL.getDocid());
-                        webURL.setParentUrl(curURL.getURL());
-                        int newdocid = docIdServer.getDocId(webURL.getURL());
-                        if (newdocid > 0) {
-                            // This is not the first time that this Url is visited. So, we set the
-                            // depth to a negative number.
-                            webURL.setDepth((short) -1);
-                            webURL.setDocid(newdocid);
-                        } else {
-                            webURL.setDocid(-1);
-                            webURL.setDepth((short) (curURL.getDepth() + 1));
-                            if ((maxCrawlDepth == -1) || (curURL.getDepth() < maxCrawlDepth)) {
-                                if (shouldVisit(page, webURL)) {
-                                    if (robotstxtServer.allows(webURL)) {
-                                        webURL.setDocid(docIdServer.getNewDocID(webURL.getURL()));
-                                        toSchedule.add(webURL);
-                                    } else {
-                                        logger.debug(
-                                            "Not visiting: {} as per the server's \"robots.txt\" " +
-                                            "policy", webURL.getURL());
-                                    }
-                                } else {
-                                    logger.debug(
-                                        "Not visiting: {} as per your \"shouldVisit\" policy",
-                                        webURL.getURL());
-                                }
-                            }
-                        }
-                    }
-                    frontier.scheduleAll(toSchedule);
-                } else {
-                    logger.debug("Not looking for links in page {}, "
-                                 + "as per your \"shouldFollowLinksInPage\" policy",
-                                 page.getWebURL().getURL());
-                }
-
-                boolean noIndex = myController.getConfig().isRespectNoIndex() &&
-                    page.getContentType() != null &&
-                    page.getContentType().contains("html") &&
-                    ((HtmlParseData)page.getParseData())
-                        .getMetaTagValue("robots").
-                        contains("noindex");
-
-                if (!noIndex) {
-                    visit(page);
-                }
-            }
-        } catch (PageBiggerThanMaxSizeException e) {
-            onPageBiggerThanMaxSize(curURL.getURL(), e.getPageSize());
-        } catch (ParseException pe) {
-            onParseError(curURL);
-        } catch (ContentFetchException | SocketTimeoutException cfe) {
-            onContentFetchError(curURL);
-            onContentFetchError(page);
-        } catch (NotAllowedContentException nace) {
-            logger.debug(
-                "Skipping: {} as it contains binary content which you configured not to crawl",
-                curURL.getURL());
-        } catch (Exception e) {
-            onUnhandledException(curURL, e);
-        } finally {
-            if (fetchResult != null) {
-                fetchResult.discardContentIfNotConsumed();
-            }
-        }
-    }
-
-    public Thread getThread() {
-        return myThread;
-    }
-
-    public void setThread(Thread myThread) {
-        this.myThread = myThread;
-    }
-
-    public boolean isNotWaitingForNewURLs() {
-        return !isWaitingForNewURLs;
+    private boolean isRedirect(int statusCode) {
+        return (statusCode == HttpStatus.SC_MOVED_PERMANENTLY || statusCode == HttpStatus.SC_MOVED_TEMPORARILY || statusCode == HttpStatus.SC_MULTIPLE_CHOICES || statusCode == HttpStatus.SC_SEE_OTHER || statusCode == HttpStatus.SC_TEMPORARY_REDIRECT || statusCode == 308);
     }
 }

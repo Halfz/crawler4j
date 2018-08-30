@@ -48,6 +48,21 @@ public class WebURL implements Serializable {
     private String tag;
     private Map<String, String> attributes;
 
+    public WebURL(){
+
+    }
+
+    public WebURL(String newUrl, WebURL fromUrl){
+        setURL(newUrl);
+        setAttributes(fromUrl.attributes);
+        setDepth(fromUrl.depth);
+        setPriority(fromUrl.priority);
+        setParentUrl(fromUrl.parentUrl);
+        setParentDocid(fromUrl.parentDocid);
+        setAnchor(fromUrl.anchor);
+        setTag(fromUrl.tag);
+    }
+
     /**
      * @return unique document id assigned to this Url.
      */

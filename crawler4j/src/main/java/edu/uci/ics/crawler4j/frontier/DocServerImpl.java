@@ -5,9 +5,9 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,34 +17,27 @@
 
 package edu.uci.ics.crawler4j.frontier;
 
+import com.sleepycat.je.*;
+import edu.uci.ics.crawler4j.crawler.CrawlConfig;
+import edu.uci.ics.crawler4j.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.sleepycat.je.Database;
-import com.sleepycat.je.DatabaseConfig;
-import com.sleepycat.je.DatabaseEntry;
-import com.sleepycat.je.DatabaseException;
-import com.sleepycat.je.Environment;
-import com.sleepycat.je.OperationStatus;
-
-import edu.uci.ics.crawler4j.crawler.CrawlConfig;
-import edu.uci.ics.crawler4j.util.Util;
+import java.util.Date;
 
 /**
  * @author Yasser Ganjisaffar
  */
 
-public class DocIDServerImpl implements DocIDServer {
-    private static final Logger logger = LoggerFactory.getLogger(DocIDServerImpl.class);
-
-    private final Database docIDsDB;
+public class DocServerImpl implements DocServer {
+    private static final Logger logger = LoggerFactory.getLogger(DocServerImpl.class);
     private static final String DATABASE_NAME = "DocIDs";
-
+    private final Database docIDsDB;
     private final Object mutex = new Object();
 
     private int lastDocID;
 
-    public DocIDServerImpl(Environment env, CrawlConfig config) {
+    public DocServerImpl(Environment env, CrawlConfig config) {
         DatabaseConfig dbConfig = new DatabaseConfig();
         dbConfig.setAllowCreate(true);
         dbConfig.setTransactional(config.isResumableCrawling());
@@ -89,7 +82,22 @@ public class DocIDServerImpl implements DocIDServer {
     }
 
     @Override
-    public int getNewDocID(String url) {
+    public long getLastScheduled(String url) {
+        return getDocId(url) > 0 ? Long.MAX_VALUE : 0;
+    }
+
+    @Override
+    public long getLastSeen(String url) {
+        return getDocId(url) > 0 ? Long.MAX_VALUE : 0;
+    }
+
+    @Override
+    public long now() {
+        return (new Date()).getTime();
+    }
+
+    @Override
+    public int getOrCreateDocID(String url) {
         synchronized (mutex) {
             try {
                 // Make sure that we have not already assigned a docid for this URL
@@ -99,8 +107,7 @@ public class DocIDServerImpl implements DocIDServer {
                 }
 
                 ++lastDocID;
-                docIDsDB.put(null, new DatabaseEntry(url.getBytes()),
-                             new DatabaseEntry(Util.int2ByteArray(lastDocID)));
+                docIDsDB.put(null, new DatabaseEntry(url.getBytes()), new DatabaseEntry(Util.int2ByteArray(lastDocID)));
                 return lastDocID;
             } catch (Exception e) {
                 logger.error("Exception thrown while getting new DocID", e);
@@ -110,49 +117,30 @@ public class DocIDServerImpl implements DocIDServer {
     }
 
     @Override
-    public void addUrlAndDocId(String url, int docId) throws Exception {
-        synchronized (mutex) {
-            if (docId <= lastDocID) {
-                throw new Exception(
-                    "Requested doc id: " + docId + " is not larger than: " + lastDocID);
-            }
-
-            // Make sure that we have not already assigned a docid for this URL
-            int prevDocid = getDocId(url);
-            if (prevDocid > 0) {
-                if (prevDocid == docId) {
-                    return;
-                }
-                throw new Exception("Doc id: " + prevDocid + " is already assigned to URL: " + url);
-            }
-
-            docIDsDB.put(null, new DatabaseEntry(url.getBytes()),
-                         new DatabaseEntry(Util.int2ByteArray(docId)));
-            lastDocID = docId;
+    public void close() {
+        try {
+            docIDsDB.close();
+        } catch (DatabaseException e) {
+            logger.error("Exception thrown while closing DocServer", e);
         }
     }
 
     @Override
-    public boolean isSeenBefore(String url) {
-        return getDocId(url) != -1;
+    public void seen(String url, int statusCode) {
+
     }
 
     @Override
-    public final int getDocCount() {
+    public void setScheduled(String url) {
+
+    }
+
+    private int getDocCount() {
         try {
             return (int) docIDsDB.count();
         } catch (DatabaseException e) {
             logger.error("Exception thrown while getting DOC Count", e);
             return -1;
-        }
-    }
-
-    @Override
-    public void close() {
-        try {
-            docIDsDB.close();
-        } catch (DatabaseException e) {
-            logger.error("Exception thrown while closing DocIDServer", e);
         }
     }
 }

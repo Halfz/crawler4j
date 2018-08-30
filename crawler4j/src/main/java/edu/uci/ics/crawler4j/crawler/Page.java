@@ -19,8 +19,10 @@ package edu.uci.ics.crawler4j.crawler;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.SocketTimeoutException;
 import java.nio.charset.Charset;
 
+import edu.uci.ics.crawler4j.fetcher.PageFetchResult;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.entity.ContentType;
@@ -187,6 +189,21 @@ public class Page {
         }
 
         contentData = toByteArray(entity, maxBytes);
+    }
+
+    public boolean applyPageFetchResult(PageFetchResult pageFetchResult, int maxBytes)  throws SocketTimeoutException{
+
+        try {
+            this.setFetchResponseHeaders(pageFetchResult.getResponseHeaders());
+            this.load(pageFetchResult.getEntity(), maxBytes);
+            return true;
+        } catch (SocketTimeoutException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.info("Exception while fetching content for: {} [{}]", getWebURL().getURL(),
+                    e.getMessage());
+        }
+        return false;
     }
 
     public WebURL getWebURL() {

@@ -19,7 +19,7 @@ package edu.uci.ics.crawler4j.crawler
 
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration
 import com.github.tomakehurst.wiremock.junit.WireMockRule
-import edu.uci.ics.crawler4j.fetcher.PageFetcher
+import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtConfig
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtServer
 import org.junit.Rule
@@ -74,7 +74,7 @@ class RedirectHandlerTest extends Specification {
                   Allow: /
                 /$)))
 
-        PageFetcher pageFetcher = new PageFetcher(config)
+        PageFetcherImpl pageFetcher = new PageFetcherImpl(config)
         RobotstxtServer robotstxtServer = new RobotstxtServer(new RobotstxtConfig(), pageFetcher)
         CrawlController controller = new CrawlController(config, pageFetcher, robotstxtServer)
         controller.addSeed "http://localhost:" + wireMockRule.port() + "/some/index.html"
