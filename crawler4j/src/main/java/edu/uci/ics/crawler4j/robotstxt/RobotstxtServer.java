@@ -74,7 +74,18 @@ public class RobotstxtServer {
                 }
             }
             if (directives == null) {
-                directives = fetchDirectives(url);
+                synchronized (this) {
+                    directives = host2directivesCache.get(host);
+                    if (directives != null && directives.needsRefetch()) {
+                        synchronized (host2directivesCache) {
+                            host2directivesCache.remove(host);
+                            directives = null;
+                        }
+                    }
+                    if (directives == null) {
+                        directives = fetchDirectives(url);
+                    }
+                }
             }
             return directives.allows(path);
         } catch (MalformedURLException e) {

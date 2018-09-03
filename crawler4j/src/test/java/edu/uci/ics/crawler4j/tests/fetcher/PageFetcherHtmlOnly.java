@@ -10,6 +10,7 @@ import org.apache.http.client.methods.HttpHead;
 import java.io.IOException;
 import java.util.Date;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 
 public class PageFetcherHtmlOnly extends PageFetcherImpl {
 
@@ -18,7 +19,7 @@ public class PageFetcherHtmlOnly extends PageFetcherImpl {
     }
 
     @Override
-    public CompletableFuture<PageFetchResult> fetchPage(WebURL webUrl) {
+    public CompletionStage<PageFetchResult> fetchPage(WebURL webUrl) {
         String toFetchURL = webUrl.getURL();
 
         PageFetchResult fetchResult = new PageFetchResult();

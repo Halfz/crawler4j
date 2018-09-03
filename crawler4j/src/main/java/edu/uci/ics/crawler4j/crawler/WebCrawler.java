@@ -42,6 +42,7 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * WebCrawler class in the Runnable class that is executed by each crawler thread.
@@ -99,12 +100,13 @@ public class WebCrawler implements Runnable {
 
     @Override
     public void run() {
-
+        AtomicReference<List<WebURL>> lastAssignedUrls = new AtomicReference<>(new ArrayList<>());
         try {
             onStart();
             while (!myController.isShuttingDown()) {
                 isWaitingForNewURLs.set(true);
                 frontier.getNextURLs(50).thenCompose(assignedURLs -> {
+                    lastAssignedUrls.set(assignedURLs);
                     isWaitingForNewURLs.set(false);
                     if (assignedURLs.isEmpty()) {
                         if (frontier.isFinished()) {
@@ -117,7 +119,7 @@ public class WebCrawler implements Runnable {
                         }
                         return CompletableFuture.completedFuture(null);
                     } else {
-                        List<CompletionStage<Void>> ret = new ArrayList<>();
+                        List<CompletableFuture<Void>> ret = new ArrayList<>();
                         for (WebURL curURL : assignedURLs) {
                             if (myController.isShuttingDown()) {
                                 logger.info("Exiting because of controller shutdown.");
@@ -127,17 +129,23 @@ public class WebCrawler implements Runnable {
                                 WebURL processUrl = handleUrlBeforeProcess(curURL);
 
                                 if (shouldProcess(processUrl)) {
-                                    ret.add(processPage(processUrl).thenAccept((Void) -> frontier.setProcessed(curURL)));
+                                    ret.add(processPage(processUrl).thenAccept((Void) -> frontier.setProcessed(curURL)).toCompletableFuture());
                                 } else {
-                                    ret.add(frontier.setProcessed(curURL));
+                                    ret.add(frontier.setProcessed(curURL).toCompletableFuture());
                                 }
                             }
                         }
                         return CompletableFuture.allOf(ret.toArray(new CompletableFuture[0]));
                     }
+                }).exceptionally(throwable -> {
+                    logger.error("crawler throws error", throwable);
+                    return null;
                 }).toCompletableFuture().get();
             }
         } catch (Exception e) {
+            List<WebURL> webURLS = lastAssignedUrls.get();
+            frontier.scheduleAll(webURLS);
+            webURLS.forEach(frontier::setProcessed);
             logger.error("thread {} dead unexpectedly", myId, e);
             throw new RuntimeException(e);
         }
@@ -180,6 +188,77 @@ public class WebCrawler implements Runnable {
 
     public boolean isNotWaitingForNewURLs() {
         return !isWaitingForNewURLs.get();
+    }
+
+    public CompletionStage<Page> fetchPage(WebURL curURL) {
+
+        if (curURL == null) {
+            logger.warn("processPage method received null url");
+            return CompletableFuture.completedFuture(null);
+        }
+
+
+        curURL.setDocid(docServer.getOrCreateDocID(curURL.getURL()));
+
+        return pageFetcher.fetchPage(curURL).thenApply((fetchResult) -> {
+
+            Page page = new Page(curURL);
+            try {
+                int statusCode = fetchResult.getStatusCode();
+                handlePageStatusCode(curURL, statusCode, EnglishReasonPhraseCatalog.INSTANCE.getReason(statusCode,
+                        Locale.ENGLISH));
+                // Finds the status reason for all known statuses
+
+                page.setFetchResponseHeaders(fetchResult.getResponseHeaders());
+                page.setStatusCode(statusCode);
+                if (statusCode < 200 || statusCode > 299) { // Not 2XX: 2XX status codes indicate success
+                    if (isRedirect(statusCode)) { // is 3xx  todo
+                        processPageRedirectSync(page, curURL, fetchResult);
+                    } else { // All other http codes other than 3xx & 200
+                        processPageErrorSync(curURL, fetchResult);
+                    }
+
+                } else {
+                    processPage200Sync(page, curURL, fetchResult);
+                }
+            } catch (ParseException pe) {
+                onParseError(curURL);
+            } catch (ContentFetchException cfe) {
+                if (cfe.getCause() != null && cfe.getCause() instanceof SocketTimeoutException) {
+                    logger.trace("socketTimeoutException", cfe.getCause());
+                }
+                onContentFetchError(page);
+            } catch (NotAllowedContentException nace) {
+                logger.debug("Skipping: {} as it contains binary content which you configured not to crawl",
+                        curURL.getURL());
+            } catch (Exception e) {
+                onUnhandledException(curURL, e);
+            } finally {
+                if (fetchResult != null) {
+                    fetchResult.discardContentIfNotConsumed();
+                }
+            }
+            return page;
+        }).exceptionally(e -> {
+            if (e.getCause() instanceof PageBiggerThanMaxSizeException) {
+                onPageBiggerThanMaxSize(curURL.getURL(),
+                        ((PageBiggerThanMaxSizeException) (e.getCause())).getPageSize());
+            } else {
+                onUnhandledException(curURL, e);
+            }
+            // TODO 여기서 에러를 던지는게 맞아보인다.
+            // TODO 에러를 던지면 상단에서 받아줘야함
+            return null;
+        });
+    }
+
+    public CompletionStage<Page> fetchPageFollowRedirect(WebURL curURL) {
+        return fetchPage(curURL).thenCompose(page -> {
+            if (isRedirect(page.getStatusCode())) {
+                return fetchPage(new WebURL(page.getRedirectedToUrl(), curURL));
+            }
+            return CompletableFuture.completedFuture(page);
+        });
     }
 
     /**
@@ -268,78 +347,6 @@ public class WebCrawler implements Runnable {
         // Sub-classed should override this to add their custom functionality
     }
 
-    public CompletionStage<Page> fetchPage(WebURL curURL) {
-
-        if (curURL == null) {
-            logger.warn("processPage method received null url");
-            return CompletableFuture.completedFuture(null);
-        }
-
-
-        curURL.setDocid(docServer.getOrCreateDocID(curURL.getURL()));
-
-        return pageFetcher.fetchPage(curURL).thenApply((fetchResult) -> {
-
-            Page page = new Page(curURL);
-            try {
-                int statusCode = fetchResult.getStatusCode();
-                handlePageStatusCode(curURL, statusCode, EnglishReasonPhraseCatalog.INSTANCE.getReason(statusCode,
-                        Locale.ENGLISH));
-                // Finds the status reason for all known statuses
-
-                page.setFetchResponseHeaders(fetchResult.getResponseHeaders());
-                page.setStatusCode(statusCode);
-                if (statusCode < 200 || statusCode > 299) { // Not 2XX: 2XX status codes indicate success
-                    if (isRedirect(statusCode)) { // is 3xx  todo
-                        processPageRedirectSync(page, curURL, fetchResult);
-                    } else { // All other http codes other than 3xx & 200
-                        processPageErrorSync(curURL, fetchResult);
-                    }
-
-                } else {
-                    processPage200Sync(page, curURL, fetchResult);
-                }
-            } catch (ParseException pe) {
-                onParseError(curURL);
-            } catch (ContentFetchException cfe) {
-                if (cfe.getCause() != null && cfe.getCause() instanceof SocketTimeoutException) {
-                    logger.trace("socketTimeoutException", cfe.getCause());
-                }
-                onContentFetchError(curURL);
-                onContentFetchError(page);
-            } catch (NotAllowedContentException nace) {
-                logger.debug("Skipping: {} as it contains binary content which you configured not to crawl",
-                        curURL.getURL());
-            } catch (Exception e) {
-                onUnhandledException(curURL, e);
-            } finally {
-                if (fetchResult != null) {
-                    fetchResult.discardContentIfNotConsumed();
-                }
-            }
-            return page;
-        }).exceptionally(e -> {
-            if (e.getCause() instanceof PageBiggerThanMaxSizeException) {
-                onPageBiggerThanMaxSize(curURL.getURL(),
-                        ((PageBiggerThanMaxSizeException) (e.getCause())).getPageSize());
-            } else {
-                onUnhandledException(curURL, e);
-            }
-            // TODO 여기서 에러를 던지는게 맞아보인다.
-            // TODO 에러를 던지면 상단에서 받아줘야함
-            return null;
-        });
-    }
-
-    public CompletionStage<Page> fetchPageFollowRedirect(WebURL curURL) {
-        return fetchPage(curURL).thenCompose(page -> {
-            if (isRedirect(page.getStatusCode())) {
-                return fetchPage(new WebURL(page.getRedirectedToUrl(), curURL));
-            }
-            return CompletableFuture.completedFuture(page);
-        });
-    }
-
     /**
      * This function is called once the header of a page is fetched. It can be
      * overridden by sub-classes to perform custom logic for different status
@@ -364,19 +371,6 @@ public class WebCrawler implements Runnable {
      */
     protected WebURL handleUrlBeforeProcess(WebURL curURL) {
         return curURL;
-    }
-
-    /**
-     * This function is called if the content of a url could not be fetched.
-     *
-     * @param webUrl URL which content failed to be fetched
-     * @deprecated use {@link #onContentFetchError(Page)}
-     */
-    @Deprecated
-    protected void onContentFetchError(WebURL webUrl) {
-        logger.warn("Can't fetch content of: {}", webUrl.getURL());
-        // Do nothing by default (except basic logging)
-        // Sub-classed can override this to add their custom functionality
     }
 
     /**
@@ -423,13 +417,13 @@ public class WebCrawler implements Runnable {
      * This function is called if the crawler encountered an unexpected http status code ( a
      * status code other than 3xx)
      *
-     * @param urlStr      URL in which an unexpected error was encountered while crawling
+     * @param url         URL in which an unexpected error was encountered while crawling
      * @param statusCode  Html StatusCode
      * @param contentType Type of Content
      * @param description Error Description
      */
-    protected void onUnexpectedStatusCode(String urlStr, int statusCode, String contentType, String description) {
-        logger.warn("Skipping URL: {}, StatusCode: {}, {}, {}", urlStr, statusCode, contentType, description);
+    protected void onUnexpectedStatusCode(WebURL url, int statusCode, String contentType, String description) {
+        logger.warn("Skipping URL: {}, StatusCode: {}, {}, {}", url, statusCode, contentType, description);
         // Do nothing by default (except basic logging)
         // Sub-classed can override this to add their custom functionality
     }
@@ -450,6 +444,8 @@ public class WebCrawler implements Runnable {
     protected void processDonePage200Sync(Page page, WebURL curURL) {
         if (shouldFollowLinksIn(page.getWebURL())) {
             ParseData parseData = page.getParseData();
+            if (parseData == null)
+                return;
             List<WebURL> toSchedule = new ArrayList<>();
             int maxCrawlDepth = myController.getConfig().getMaxDepthOfCrawling();
             for (WebURL webURL : parseData.getOutgoingUrls()) {
@@ -575,7 +571,7 @@ public class WebCrawler implements Runnable {
         // the status reason for all known statuses
         String contentType = fetchResult.getEntity() == null ? "" : fetchResult.getEntity().getContentType() == null
                 ? "" : fetchResult.getEntity().getContentType().getValue();
-        onUnexpectedStatusCode(curURL.getURL(), fetchResult.getStatusCode(), contentType, description);
+        onUnexpectedStatusCode(curURL, fetchResult.getStatusCode(), contentType, description);
     }
 
     protected void processPageRedirectSync(Page page, WebURL curURL, PageFetchResult fetchResult) {

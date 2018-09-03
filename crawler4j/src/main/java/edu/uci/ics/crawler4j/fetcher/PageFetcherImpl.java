@@ -150,9 +150,7 @@ public class PageFetcherImpl implements PageFetcher {
 
             if (!credentialsMap.isEmpty()) {
                 CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-                credentialsMap.forEach((AuthScope authscope, Credentials credentials) -> {
-                    credentialsProvider.setCredentials(authscope, credentials);
-                });
+                credentialsMap.forEach(credentialsProvider::setCredentials);
                 clientBuilder.setDefaultCredentialsProvider(credentialsProvider);
                 clientBuilder.addInterceptorFirst(new BasicAuthHttpRequestInterceptor());
             }
