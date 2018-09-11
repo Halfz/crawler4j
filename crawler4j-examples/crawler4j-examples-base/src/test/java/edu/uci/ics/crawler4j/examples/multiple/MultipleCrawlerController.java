@@ -17,6 +17,7 @@
 
 package edu.uci.ics.crawler4j.examples.multiple;
 
+import edu.uci.ics.crawler4j.robotstxt.RobotstxtServerImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,7 +73,7 @@ public class MultipleCrawlerController {
      * We will use the same RobotstxtServer for both of the crawlers.
      */
         RobotstxtConfig robotstxtConfig = new RobotstxtConfig();
-        RobotstxtServer robotstxtServer = new RobotstxtServer(robotstxtConfig, pageFetcher1);
+        RobotstxtServer robotstxtServer = new RobotstxtServerImpl(robotstxtConfig, pageFetcher1);
 
         CrawlController controller1 = new CrawlController(config1, pageFetcher1, robotstxtServer);
         CrawlController controller2 = new CrawlController(config2, pageFetcher2, robotstxtServer);

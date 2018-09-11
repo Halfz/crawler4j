@@ -311,7 +311,7 @@ public class WebCrawler implements Runnable {
     // 기본 1시간 sleep
     public boolean shouldSchedule(WebURL url) {
         long lastScheduled = docServer.getLastScheduled(url.getURL());
-        if (lastScheduled > (docServer.now() - (60 * 60)))
+        if (lastScheduled > (docServer.getLastSeen(url.getURL())))
             return false;
         return true;
     }

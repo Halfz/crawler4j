@@ -7,7 +7,7 @@ import edu.uci.ics.crawler4j.crawler.CrawlController
 import edu.uci.ics.crawler4j.crawler.WebCrawler
 import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtConfig
-import edu.uci.ics.crawler4j.robotstxt.RobotstxtServer
+import edu.uci.ics.crawler4j.robotstxt.RobotstxtServerImpl
 import org.apache.http.impl.conn.InMemoryDnsResolver
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
@@ -55,7 +55,7 @@ class CustomDnsResolverTest extends Specification {
         PageFetcherImpl pageFetcher = new PageFetcherImpl(config)
         RobotstxtConfig robotstxtConfig = new RobotstxtConfig()
         robotstxtConfig.setEnabled false
-        RobotstxtServer robotstxtServer = new RobotstxtServer(robotstxtConfig, pageFetcher)
+        RobotstxtServerImpl robotstxtServer = new RobotstxtServerImpl(robotstxtConfig, pageFetcher)
         CrawlController controller = new CrawlController(config, pageFetcher, robotstxtServer)
 
         controller.addSeed("http://googhle.com:" + wireMockRule.port() + "/some/index.html")

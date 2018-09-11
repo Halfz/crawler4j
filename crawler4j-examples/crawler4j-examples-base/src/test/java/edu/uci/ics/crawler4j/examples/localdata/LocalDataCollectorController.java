@@ -19,6 +19,7 @@ package edu.uci.ics.crawler4j.examples.localdata;
 
 import java.util.List;
 
+import edu.uci.ics.crawler4j.robotstxt.RobotstxtServerImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +51,7 @@ public class LocalDataCollectorController {
 
         PageFetcher pageFetcher = new PageFetcher(config);
         RobotstxtConfig robotstxtConfig = new RobotstxtConfig();
-        RobotstxtServer robotstxtServer = new RobotstxtServer(robotstxtConfig, pageFetcher);
+        RobotstxtServer robotstxtServer = new RobotstxtServerImpl(robotstxtConfig, pageFetcher);
         CrawlController controller = new CrawlController(config, pageFetcher, robotstxtServer);
 
         controller.addSeed("http://www.ics.uci.edu/");

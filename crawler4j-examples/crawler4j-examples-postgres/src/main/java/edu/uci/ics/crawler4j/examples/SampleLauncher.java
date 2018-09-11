@@ -9,6 +9,7 @@ import edu.uci.ics.crawler4j.fetcher.PageFetcher;
 import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl;
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtConfig;
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtServer;
+import edu.uci.ics.crawler4j.robotstxt.RobotstxtServerImpl;
 import org.flywaydb.core.Flyway;
 
 public class SampleLauncher {
@@ -31,7 +32,7 @@ public class SampleLauncher {
          */
         PageFetcher pageFetcher = new PageFetcherImpl(config);
         RobotstxtConfig robotstxtConfig = new RobotstxtConfig();
-        RobotstxtServer robotstxtServer = new RobotstxtServer(robotstxtConfig, pageFetcher);
+        RobotstxtServer robotstxtServer = new RobotstxtServerImpl(robotstxtConfig, pageFetcher);
         CrawlController controller = new CrawlController(config, pageFetcher, robotstxtServer);
 
         /*

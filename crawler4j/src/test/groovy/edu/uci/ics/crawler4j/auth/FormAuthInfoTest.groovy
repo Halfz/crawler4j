@@ -10,7 +10,7 @@ import edu.uci.ics.crawler4j.crawler.WebCrawler
 import edu.uci.ics.crawler4j.crawler.authentication.FormAuthInfo
 import edu.uci.ics.crawler4j.fetcher.PageFetcherImpl
 import edu.uci.ics.crawler4j.robotstxt.RobotstxtConfig
-import edu.uci.ics.crawler4j.robotstxt.RobotstxtServer
+import edu.uci.ics.crawler4j.robotstxt.RobotstxtServerImpl
 import org.apache.http.client.config.CookieSpecs
 import org.apache.http.impl.client.BasicCookieStore
 import org.junit.Assert
@@ -109,7 +109,7 @@ class FormAuthInfoTest extends Specification {
         PageFetcherImpl pageFetcher = new PageFetcherImpl(c)
         RobotstxtConfig robotstxtConfig = new RobotstxtConfig()
         robotstxtConfig.setEnabled false
-        RobotstxtServer robotstxtServer = new RobotstxtServer(robotstxtConfig, pageFetcher)
+        RobotstxtServerImpl robotstxtServer = new RobotstxtServerImpl(robotstxtConfig, pageFetcher)
         CrawlController controller = new CrawlController(c, pageFetcher, robotstxtServer)
 
         controller.addSeed("http://localhost:${wireMockRule.port()}/")
