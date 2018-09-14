@@ -234,17 +234,17 @@ public class CrawlController {
      * the next URL that is found during the crawl will get a doc id of 8. Also
      * you need to ensure to add seen Urls in increasing order of document ids.
      *
-     * @param url the URL of the page
+     * @param webURL the URL of the page
      *            //@param docId the document id that you want to be assigned to this URL.
      */
     @Deprecated
-    public void addSeenUrl(String url, int status) {
-        String canonicalUrl = URLCanonicalizer.getCanonicalURL(url);
+    public void addSeenUrl(WebURL webURL, int status) {
+        String canonicalUrl = URLCanonicalizer.getCanonicalURL(webURL.getURL());
         if (canonicalUrl == null) {
-            logger.error("Invalid Url: {} (can't cannonicalize it!)", url);
+            logger.error("Invalid Url: {} (can't cannonicalize it!)", webURL.getURL());
         } else {
             try {
-                docServer.seen(canonicalUrl, status);
+                docServer.seen(webURL, status);
             } catch (Exception e) {
                 logger.error("Could not add seen url: {}", e.getMessage());
             }

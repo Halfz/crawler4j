@@ -19,6 +19,7 @@ package edu.uci.ics.crawler4j.frontier;
 
 import com.sleepycat.je.*;
 import edu.uci.ics.crawler4j.crawler.CrawlConfig;
+import edu.uci.ics.crawler4j.url.WebURL;
 import edu.uci.ics.crawler4j.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -126,7 +127,7 @@ public class DocServerImpl implements DocServer {
     }
 
     @Override
-    public void seen(String url, int statusCode) {
+    public void seen(WebURL url, int statusCode) {
 
     }
 

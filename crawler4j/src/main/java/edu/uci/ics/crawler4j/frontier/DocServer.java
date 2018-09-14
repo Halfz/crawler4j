@@ -18,7 +18,7 @@ public interface DocServer {
 
     long now();
 
-    void seen(String url, int statusCode);
+    void seen(WebURL url, int statusCode);
 
     default boolean shouldProcess(WebURL url) {
         long lastSeen = getLastSeen(url.getURL());

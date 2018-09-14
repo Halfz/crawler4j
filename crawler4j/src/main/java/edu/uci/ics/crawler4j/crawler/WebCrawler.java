@@ -516,7 +516,7 @@ public class WebCrawler implements Runnable {
                 processDonePage200Sync(page, curURL);
             }
 
-            docServer.seen(page.getWebURL().getURL(), statusCode);
+            docServer.seen(page.getWebURL(), statusCode);
             return page;
         });
     }
