@@ -302,18 +302,12 @@ public class WebCrawler implements Runnable {
 
     // 기본 3시간 sleep
     public boolean shouldProcess(WebURL url) {
-        long lastSeen = docServer.getLastSeen(url.getURL());
-        if (lastSeen > (docServer.now() - (3 * 60 * 60)))
-            return false;
-        return true;
+        return docServer.shouldProcess(url);
     }
 
     // 기본 1시간 sleep
     public boolean shouldSchedule(WebURL url) {
-        long lastScheduled = docServer.getLastScheduled(url.getURL());
-        if (lastScheduled > (docServer.getLastSeen(url.getURL())))
-            return false;
-        return true;
+        return docServer.shouldSchedule(url);
     }
 
     /**
