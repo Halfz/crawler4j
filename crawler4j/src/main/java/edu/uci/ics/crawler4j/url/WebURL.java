@@ -48,19 +48,32 @@ public class WebURL implements Serializable {
     private String tag;
     private Map<String, String> attributes;
 
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
+    private String sessionId;
+
     public WebURL(){
 
     }
 
-    public WebURL(String newUrl, WebURL fromUrl){
-        setURL(newUrl);
-        setAttributes(fromUrl.attributes);
-        setDepth(fromUrl.depth);
-        setPriority(fromUrl.priority);
-        setParentUrl(fromUrl.parentUrl);
-        setParentDocid(fromUrl.parentDocid);
-        setAnchor(fromUrl.anchor);
-        setTag(fromUrl.tag);
+    public static WebURL copyWithNewUrl(String newUrl, WebURL fromUrl){
+        WebURL webURL = new WebURL();
+        webURL.setURL(newUrl);
+        webURL.setAttributes(fromUrl.attributes);
+        webURL.setDepth(fromUrl.depth);
+        webURL.setPriority(fromUrl.priority);
+        webURL.setParentUrl(fromUrl.parentUrl);
+        webURL.setParentDocid(fromUrl.parentDocid);
+        webURL.setAnchor(fromUrl.anchor);
+        webURL.setTag(fromUrl.tag);
+        webURL.setSessionId(fromUrl.sessionId);
+        return webURL;
     }
 
     /**
@@ -248,4 +261,6 @@ public class WebURL implements Serializable {
     public String toString() {
         return url;
     }
+
+
 }

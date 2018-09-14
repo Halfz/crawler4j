@@ -206,7 +206,7 @@ public class CrawlController {
      *
      * @param pageUrl the URL of the seed
      */
-    public void addSeed(String pageUrl) {
+    public void addSeed(String pageUrl, String sessionId) {
         String canonicalUrl = URLCanonicalizer.getCanonicalURL(pageUrl);
         if (canonicalUrl == null) {
             logger.error("Invalid seed URL: {}", pageUrl);
@@ -214,6 +214,7 @@ public class CrawlController {
             WebURL webUrl = new WebURL();
             webUrl.setURL(canonicalUrl);
             webUrl.setDepth((short) 0);
+            webUrl.setSessionId(sessionId);
             if (robotstxtServer.allows(webUrl)) {
                 frontier.schedule(webUrl);
             } else {

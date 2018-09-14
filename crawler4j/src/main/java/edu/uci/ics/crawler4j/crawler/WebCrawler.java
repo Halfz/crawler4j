@@ -255,7 +255,7 @@ public class WebCrawler implements Runnable {
     public CompletionStage<Page> fetchPageFollowRedirect(WebURL curURL) {
         return fetchPage(curURL).thenCompose(page -> {
             if (isRedirect(page.getStatusCode())) {
-                return fetchPage(new WebURL(page.getRedirectedToUrl(), curURL));
+                return fetchPage(WebURL.copyWithNewUrl(page.getRedirectedToUrl(), curURL));
             }
             return CompletableFuture.completedFuture(page);
         });
@@ -444,6 +444,7 @@ public class WebCrawler implements Runnable {
             int maxCrawlDepth = myController.getConfig().getMaxDepthOfCrawling();
             for (WebURL webURL : parseData.getOutgoingUrls()) {
                 webURL.setParentDocid(curURL.getDocid());
+                webURL.setSessionId(curURL.getSessionId());
                 webURL.setParentUrl(curURL.getURL());
                 //                            int newdocid = docServer.getDocId(webURL.getURL());
                 //                            if (newdocid > 0) {
@@ -483,7 +484,7 @@ public class WebCrawler implements Runnable {
 
     protected void processDonePageRedirectSync(Page page, WebURL curURL) {
         if (myController.getConfig().isFollowRedirects()) {
-            WebURL webURL = new WebURL(page.getRedirectedToUrl(), curURL);
+            WebURL webURL = WebURL.copyWithNewUrl(page.getRedirectedToUrl(), curURL);
             if (shouldVisit(page, webURL)) {
                 if (!shouldFollowLinksIn(webURL) || robotstxtServer.allows(webURL)) {
                     //                                    webURL.setDocid(docServer.getOrCreateDocID

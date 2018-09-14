@@ -3,7 +3,7 @@
     <groupId>edu.uci.ics</groupId>
     <artifactId>crawler4j-parent</artifactId>
     <packaging>pom</packaging>
-    <version>4.6.3.1-HALFZ</version>
+    <version>4.6.4-HALFZ</version>
     <name>${project.groupId}:${project.artifactId}</name>
     <description>Open Source Web Crawler for Java</description>
     <url>https://github.com/yasserg/crawler4j</url>

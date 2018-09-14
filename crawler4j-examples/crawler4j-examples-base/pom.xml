@@ -3,7 +3,7 @@
     <parent>
         <artifactId>crawler4j-parent</artifactId>
         <groupId>edu.uci.ics</groupId>
-        <version>4.6.3.1-HALFZ</version>
+        <version>4.6.4-HALFZ</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <artifactId>crawler4j-examples-base</artifactId>

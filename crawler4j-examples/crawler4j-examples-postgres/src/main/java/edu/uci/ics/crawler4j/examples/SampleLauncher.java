@@ -40,11 +40,11 @@ public class SampleLauncher {
          * URLs that are fetched and then the crawler starts following links
          * which are found in these pages
          */
-        controller.addSeed("https://de.wikipedia.org/wiki/Java_Database_Connectivity");
-        controller.addSeed("https://de.wikipedia.org/wiki/Relationale_Datenbank");
-        controller.addSeed("https://pt.wikipedia.org/wiki/JDBC");
-        controller.addSeed("https://pt.wikipedia.org/wiki/Protocolo");
-        controller.addSeed("https://de.wikipedia.org/wiki/Datenbank");
+        controller.addSeed("https://de.wikipedia.org/wiki/Java_Database_Connectivity", "");
+        controller.addSeed("https://de.wikipedia.org/wiki/Relationale_Datenbank", "");
+        controller.addSeed("https://pt.wikipedia.org/wiki/JDBC", "");
+        controller.addSeed("https://pt.wikipedia.org/wiki/Protocolo", "");
+        controller.addSeed("https://de.wikipedia.org/wiki/Datenbank", "");
 
 
         Flyway flyway = new Flyway();
